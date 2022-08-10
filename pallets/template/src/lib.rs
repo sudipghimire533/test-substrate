@@ -14,16 +14,27 @@ mod tests;
 #[cfg(feature = "runtime-benchmarks")]
 mod benchmarking;
 
+use frame_support::PalletId;
+
+const PALLET_ID: PalletId = PalletId(*b"_testing");
+
 #[frame_support::pallet]
 pub mod pallet {
-	use frame_support::pallet_prelude::*;
-	use frame_system::pallet_prelude::*;
+	use frame_support::{pallet_prelude::*, traits::{ExistenceRequirement, Currency}};
+	use frame_system::{pallet_prelude::*, ensure_signed};
+    use sp_runtime::{DispatchResult, traits::AccountIdConversion};
+
+
+    type MoneyOf<T> = <<T as Config>::Money as Currency<<T as frame_system::Config>::AccountId>>::Balance;
+    type AccountIdOf<T> = <T as frame_system::Config>::AccountId;
 
 	/// Configure the pallet by specifying the parameters and types on which it depends.
 	#[pallet::config]
 	pub trait Config: frame_system::Config {
 		/// Because this pallet emits events, it depends on the runtime's definition of an event.
 		type Event: From<Event<Self>> + IsType<<Self as frame_system::Config>::Event>;
+
+        type Money: Currency<Self::AccountId>;
 	}
 
 	#[pallet::pallet]
@@ -43,9 +54,12 @@ pub mod pallet {
 	#[pallet::event]
 	#[pallet::generate_deposit(pub(super) fn deposit_event)]
 	pub enum Event<T: Config> {
-		/// Event documentation should end with an array that provides descriptive names for event
-		/// parameters. [something, who]
 		SomethingStored(u32, T::AccountId),
+        MidwareTransfer {
+            from: T::AccountId,
+            to: T::AccountId,
+            amount: MoneyOf<T>,
+        },
 	}
 
 	// Errors inform users that something went wrong.
@@ -98,5 +112,29 @@ pub mod pallet {
 				},
 			}
 		}
+
+
+        #[pallet::weight(10_000)]
+        pub fn escrow_transfer(origin: OriginFor<T>, receiver: AccountIdOf<T>, amount: MoneyOf<T>) -> DispatchResult {
+            // Make sure we have a signed sender
+            let sender = ensure_signed(origin)?;
+
+            // Derive an escrow account
+            let escrow_account: AccountIdOf<T> = crate::PALLET_ID.into_sub_account_truncating(b"tests");
+
+            // transfer from sender to escrow
+            T::Money::transfer(&sender, &escrow_account, amount, ExistenceRequirement::KeepAlive)?;
+
+            // transfer from escrow to receiver
+            T::Money::transfer(&escrow_account, &receiver, amount, ExistenceRequirement::AllowDeath)?;
+
+            // Things looks ok
+            Self::deposit_event(Event::<T>::MidwareTransfer {
+                from: sender,
+                to: receiver,
+                amount,
+            });
+            Ok(())
+        }
 	}
 }

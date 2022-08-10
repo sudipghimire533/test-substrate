@@ -2,19 +2,29 @@ use crate::{mock::*, Error};
 use frame_support::{assert_noop, assert_ok};
 
 #[test]
-fn it_works_for_default_value() {
-	new_test_ext().execute_with(|| {
-		// Dispatch a signed extrinsic.
-		assert_ok!(TemplateModule::do_something(Origin::signed(1), 42));
-		// Read pallet storage and assert an expected result.
-		assert_eq!(TemplateModule::something(), Some(42));
-	});
-}
+fn sample_transfer() {
+    new_test_ext().execute_with(|| {
+        let sender = 100;
+        let receiver = 101;
 
-#[test]
-fn correct_error_for_none_value() {
-	new_test_ext().execute_with(|| {
-		// Ensure the expected error is thrown when no value is present.
-		assert_noop!(TemplateModule::cause_error(Origin::signed(1)), Error::<Test>::NoneValue);
-	});
+        // Let's put some balance in sender account first
+        assert_ok!(<Test as crate::Config>::Money::set_balance(Origin::root(), sender, 10000, 0));
+
+        // Record balance of sender before doing our transfer
+        let sender_balance_before_transfer = <Test as crate::Config>::Money::free_balance(&sender);
+        // Record balance of receiver before transfer
+        let receiver_balance_before_transfer = <Test as crate::Config>::Money::free_balance(&receiver);
+
+        // Call out escrow transfer function
+        assert_ok!(TemplateModule::escrow_transfer(Origin::signed(sender), receiver, 500));
+
+        // Sender balance should decrease by 500
+        let expected_sender_balance = sender_balance_before_transfer - 500;
+        // receover balance should increase by 500
+        let expected_receiver_balance = receiver_balance_before_transfer + 500;
+
+        // check expectiations
+        assert_eq!(expected_sender_balance, <Test as crate::Config>::Money::free_balance(&sender));
+        assert_eq!(expected_receiver_balance, <Test as crate::Config>::Money::free_balance(&receiver));
+    });
 }
